@@ -42,6 +42,8 @@ const BRIDGE_ACTIONS = {
   unlockAllRecipes: null,
   dumpItemNames: null,
   selfCheck: null,
+  setNpcLevelOverride: clampNumber(0, 99, true),
+  setAlertLevel: clampNumber(0, 9, true),
   unlockAllFastTravel: null,
   revealAllMappins: null,
   killAllAggressive: null,

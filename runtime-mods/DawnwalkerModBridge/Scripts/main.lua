@@ -325,6 +325,10 @@ local function GetCraftingSubsystem()
     return FindFirstOf("CraftingSubsystem")
 end
 
+local function GetCourtSubsystem()
+    return FindFirstOf("CourtSubsystem")
+end
+
 local function GetFocusAbilitiesSubsystem()
     return FindFirstOf("FocusAbilitiesSubsystem")
 end
@@ -732,6 +736,26 @@ local function RunAction(name, arg, ctx)
         end
         return true, string.format("failed: %d of %d missing (%s)", #missing, checked,
             table.concat(missing, ", "):sub(1, 300))
+    elseif name == "setNpcLevelOverride" then
+        local level = tonumber(arg)
+        if not level or level < 0 or level > 99 then return true, "failed: level out of range" end
+        local libOk, lib = pcall(function()
+            return StaticFindObject("/Script/DogwoodSystem.Default__DWSystemBlueprintFunctionLibrary")
+        end)
+        if not libOk or not lib or not SafeIsValid(lib) then
+            return true, "failed: DW system library not found"
+        end
+        local ok, err = pcall(function() lib:SetNpcLevelOverride(ctx.player, math.floor(level)) end)
+        return true, ok and string.format("ok: NPC level override set to %d", math.floor(level))
+            or ("failed: " .. tostring(err))
+    elseif name == "setAlertLevel" then
+        local level = tonumber(arg)
+        if not level or level < 0 or level > 9 then return true, "failed: alert level out of range" end
+        local court = FindValid(GetCourtSubsystem)
+        if not court then return false, "waiting for court subsystem" end
+        local ok, err = pcall(function() court:SetAlertLevelByInt(math.floor(level)) end)
+        return true, ok and string.format("ok: alert level set to %d", math.floor(level))
+            or ("failed: " .. tostring(err))
     elseif name == "unlockAllFastTravel" then
         local journal = FindValid(GetOpenWorldJournal)
         if not journal then return false, "waiting for open world journal" end

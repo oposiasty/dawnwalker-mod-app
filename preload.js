@@ -30,6 +30,10 @@
  * @property {() => Promise<Object>} nativeFixStatus
  * @property {(gearId: string, quantity?: number) => Promise<Object>} giveGearNative
  * @property {(gearId: string) => Promise<Object>} removeGearNative
+ * @property {() => Promise<Object>} getModsDir
+ * @property {() => Promise<Object>} selectModsDir
+ * @property {(modsDir: string | null) => Promise<Object>} setModsDir
+ * @property {(enabled: boolean) => Promise<Object>} setAskModsDirOnLaunch
  */
 const { contextBridge, ipcRenderer } = require("electron");
 
@@ -69,6 +73,10 @@ const dawnwalkerApi = {
 	nativeFixStatus: () => ipcRenderer.invoke("nativefix:status"),
 	giveGearNative: (gearId, quantity) => ipcRenderer.invoke("nativefix:give-gear", gearId, quantity),
 	removeGearNative: (gearId) => ipcRenderer.invoke("nativefix:remove-gear", gearId),
+	getModsDir: () => ipcRenderer.invoke("game:get-mods-dir"),
+	selectModsDir: () => ipcRenderer.invoke("game:select-mods-dir"),
+	setModsDir: (modsDir) => ipcRenderer.invoke("game:set-mods-dir", modsDir),
+	setAskModsDirOnLaunch: (enabled) => ipcRenderer.invoke("game:set-ask-mods-dir-on-launch", enabled),
 };
 
 contextBridge.exposeInMainWorld("dawnwalker", deepFreeze(dawnwalkerApi));

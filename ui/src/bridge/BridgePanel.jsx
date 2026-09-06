@@ -50,7 +50,19 @@ export default function BridgePanel({ bridgeApi, title = "Live Game Bridge", int
         )}
         {message && <p style={{ color: theme.colors.gold }}>{message}</p>}
         {!deployed ? (
-          <DWButton label="Deploy Bridge Mod" onClick={deploy} disabled={busy} data-clickpulse data-glow />
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            <DWButton label="Deploy Bridge Mod" onClick={deploy} disabled={busy} data-clickpulse data-glow />
+            {typeof window !== "undefined" && window.dawnwalker?.selectModsDir && (
+              <DWButton
+                label="Select Mods Folder..."
+                onClick={async () => {
+                  const res = await window.dawnwalker.selectModsDir();
+                  if (res?.ok) deploy();
+                }}
+                disabled={busy}
+              />
+            )}
+          </div>
         ) : (
           <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginTop: 6 }}>
             <DWButton label="Reset to Game Defaults" onClick={resetAll} disabled={busy} />

@@ -3,6 +3,14 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { sanitizeField, sanitizePreset, sanitizeAction } = require("./bridge-protocol");
+const {
+  parseLaunchArgs,
+  resolveAutoModsDir,
+  resolveGameRootFromModsDir,
+  readAppConfig,
+  writeAppConfig,
+  resolveActiveModsDir,
+} = require("./mods-dir-resolver");
 
 const devServerUrl = process.env.VITE_DEV_SERVER_URL;
 const STEAM_APP_ID = "3751260";
@@ -172,6 +180,80 @@ function inspectUserData() {
   };
 }
 
+// --- Live mod bridge (UE4SS) & Mods Directory ---
+// Cached so apply/status calls don't have to re-run a full install scan every time.
+let cachedGameRoot = null;
+let modsDir = null;
+let customModsDir = null;
+let askModsDirOnLaunch = false;
+
+function resolveCachedGameRoot() {
+  if (cachedGameRoot && fs.existsSync(cachedGameRoot)) return cachedGameRoot;
+  const scan = scanSteamInstall();
+  if (scan.installed && scan.gameRoot) {
+    cachedGameRoot = scan.gameRoot;
+    return cachedGameRoot;
+  }
+  if (customModsDir) {
+    const inferred = resolveGameRootFromModsDir(customModsDir, resolveGameRoot);
+    if (inferred) {
+      cachedGameRoot = inferred;
+      return cachedGameRoot;
+    }
+  }
+  return null;
+}
+
+function getActiveModsDir(optionalGameRoot = null) {
+  if (customModsDir) {
+    modsDir = customModsDir;
+    return modsDir;
+  }
+  const root = optionalGameRoot || (cachedGameRoot && fs.existsSync(cachedGameRoot) ? cachedGameRoot : null);
+  if (root) {
+    modsDir = resolveActiveModsDir({ customModsDir: null, gameRoot: root });
+    return modsDir;
+  }
+  return modsDir;
+}
+
+function setCustomModsDir(targetPath) {
+  customModsDir = targetPath ? path.normalize(targetPath) : null;
+  modsDir = getActiveModsDir();
+  try {
+    writeAppConfig(app.getPath("userData"), { modsDir: customModsDir });
+  } catch {}
+  return modsDir;
+}
+
+function promptSelectModsDir(parentWindow = null) {
+  if (!dialog || typeof dialog.showOpenDialogSync !== "function") return { ok: false, canceled: true };
+  const current = getActiveModsDir();
+  const gameRoot = resolveCachedGameRoot();
+  const defaultPath = (current && fs.existsSync(current))
+    ? current
+    : (gameRoot && fs.existsSync(gameRoot))
+      ? path.join(gameRoot, "Binaries", "Win64")
+      : undefined;
+
+  try {
+    const result = dialog.showOpenDialogSync(parentWindow || undefined, {
+      title: "Select Dawnwalker UE4SS Mods Folder (e.g. ue4ss\\Mods)",
+      defaultPath,
+      properties: ["openDirectory", "createDirectory"],
+    });
+
+    if (result && result.length > 0) {
+      const selected = result[0];
+      setCustomModsDir(selected);
+      return { ok: true, modsDir: selected };
+    }
+  } catch (error) {
+    console.error("Failed to show open dialog:", error);
+  }
+  return { ok: false, canceled: true };
+}
+
 function inspectRuntimeLoader(gameRoot) {
   const binaryRoot = path.join(gameRoot, "Binaries", "Win64");
   const loaderRoot = fs.existsSync(path.join(binaryRoot, "ue4ss"))
@@ -179,22 +261,29 @@ function inspectRuntimeLoader(gameRoot) {
     : binaryRoot;
   const markerNames = ["UE4SS.dll", "UE4SS-settings.ini", "UE4SS.log"];
   const foundMarkers = markerNames.filter((name) => fs.existsSync(path.join(loaderRoot, name)));
-  const modDirectories = ["Mods", "~mods"].filter((name) => (
-    fs.existsSync(path.join(binaryRoot, name)) || fs.existsSync(path.join(gameRoot, name))
-  ));
+  const currentMods = getActiveModsDir(gameRoot);
+  const modDirectories = [
+    currentMods,
+    path.join(loaderRoot, "Mods"),
+    path.join(binaryRoot, "Mods"),
+    path.join(gameRoot, "Mods"),
+    path.join(gameRoot, "~mods"),
+  ].filter((name) => name && fs.existsSync(name));
+  const uniqueModDirs = [...new Set(modDirectories)];
 
   return {
     binaryRoot,
     loaderRoot,
+    modsDir: currentMods,
     foundMarkers,
-    modDirectories,
-    detected: foundMarkers.includes("UE4SS.dll"),
-    supported: foundMarkers.includes("UE4SS.dll"),
+    modDirectories: uniqueModDirs,
+    detected: foundMarkers.includes("UE4SS.dll") || Boolean(currentMods && fs.existsSync(currentMods)),
+    supported: foundMarkers.includes("UE4SS.dll") || Boolean(currentMods && fs.existsSync(currentMods)),
     status: foundMarkers.includes("UE4SS.log") && readText(path.join(loaderRoot, "UE4SS.log"))?.includes("PS scan successful")
       ? "Runtime loader initialized successfully"
       : foundMarkers.includes("UE4SS.dll")
         ? "Runtime loader detected; game-specific hooks are not configured"
-      : modDirectories.length > 0
+      : uniqueModDirs.length > 0
         ? "Mod directory detected, but no supported runtime loader was found"
         : "No supported runtime loader detected",
   };
@@ -379,6 +468,7 @@ function inspectInstall(installPath, manifestPath = null) {
     appId: STEAM_APP_ID,
     path: installPath,
     gameRoot,
+    modsDir: getActiveModsDir(gameRoot),
     gameName: vdfValue(manifest, "name") || path.basename(installPath),
     buildId: vdfValue(manifest, "buildid"),
     gameRunning: isDawnwalkerRunning(),
@@ -395,7 +485,9 @@ function inspectInstall(installPath, manifestPath = null) {
       ioStoreTocFiles: extensionCount(".utoc"),
       ioStoreDataFiles: extensionCount(".ucas"),
       pluginsDirectory: fs.existsSync(path.join(gameRoot, "Plugins")),
-      modDirectory: ["Mods", "~mods"].find((directory) => fs.existsSync(path.join(gameRoot, directory))) || null,
+      modDirectory: (getActiveModsDir(gameRoot) && fs.existsSync(getActiveModsDir(gameRoot)))
+        ? getActiveModsDir(gameRoot)
+        : ["Mods", "~mods"].find((directory) => fs.existsSync(path.join(gameRoot, directory))) || null,
       userConfigDirectory: userData.configFiles.length > 0 || fs.existsSync(savedConfigPath),
       easyAntiCheat: fs.existsSync(path.join(installPath, "EasyAntiCheat")),
     },
@@ -412,31 +504,23 @@ function scanSteamInstall() {
     const installDirectory = vdfValue(manifest, "installdir");
     if (!installDirectory) continue;
     const installPath = path.join(steamAppsPath, "common", installDirectory);
-    if (fs.existsSync(installPath)) return inspectInstall(installPath, manifestPath);
+    if (fs.existsSync(installPath)) {
+      cachedGameRoot = resolveGameRoot(installPath);
+      return inspectInstall(installPath, manifestPath);
+    }
   }
 
   return { installed: false, appId: STEAM_APP_ID, path: null };
 }
 
-// --- Live mod bridge (UE4SS) ---
-// Cached so apply/status calls don't have to re-run a full install scan every time.
-let cachedGameRoot = null;
-
-function resolveCachedGameRoot() {
-  if (cachedGameRoot && fs.existsSync(cachedGameRoot)) return cachedGameRoot;
-  const scan = scanSteamInstall();
-  cachedGameRoot = scan.installed ? scan.gameRoot : null;
-  return cachedGameRoot;
-}
-
 function getBridgePaths() {
   const gameRoot = resolveCachedGameRoot();
-  if (!gameRoot) return null;
-  const modsDir = path.join(gameRoot, "Binaries", "Win64", "ue4ss", "Mods");
-  const bridgeDir = path.join(modsDir, "DawnwalkerModBridge");
+  const currentModsDir = getActiveModsDir(gameRoot);
+  if (!currentModsDir) return null;
+  const bridgeDir = path.join(currentModsDir, "DawnwalkerModBridge");
   return {
-    gameRoot,
-    modsDir,
+    gameRoot: gameRoot || path.dirname(currentModsDir),
+    modsDir: currentModsDir,
     bridgeDir,
     scriptsDir: path.join(bridgeDir, "Scripts"),
     commandFile: path.join(bridgeDir, "command.txt"),
@@ -458,6 +542,24 @@ function ensureBridgeEnabledInModsTxt(modsDir) {
   fs.writeFileSync(modsTxtPath, `${content}${separator}DawnwalkerModBridge : 1\n`);
 }
 
+function ensureModsJunction(gameRoot, modsDir) {
+  if (!gameRoot || !modsDir || !fs.existsSync(modsDir)) return;
+  try {
+    const win64Dir = path.join(gameRoot, "Binaries", "Win64");
+    if (!fs.existsSync(win64Dir)) return;
+    const standardModsDir = path.join(win64Dir, "Mods");
+    const normalizedMods = path.normalize(modsDir).toLowerCase();
+    const normalizedStandard = path.normalize(standardModsDir).toLowerCase();
+
+    // If modsDir is inside a subfolder (e.g. Binaries/Win64/ue4ss/Mods) and standard Binaries/Win64/Mods doesn't exist:
+    if (normalizedMods !== normalizedStandard && !fs.existsSync(standardModsDir)) {
+      fs.symlinkSync(modsDir, standardModsDir, "junction");
+    }
+  } catch {
+    // Non-fatal if junction already exists or permissions restrict it
+  }
+}
+
 function deployBridge() {
   const paths = getBridgePaths();
   if (!paths) return { ok: false, error: "Game install was not found" };
@@ -466,6 +568,7 @@ function deployBridge() {
   }
 
   try {
+    ensureModsJunction(paths.gameRoot, paths.modsDir);
     fs.mkdirSync(paths.scriptsDir, { recursive: true });
     fs.copyFileSync(paths.mainLuaSource, path.join(paths.scriptsDir, "main.lua"));
     ensureBridgeEnabledInModsTxt(paths.modsDir);
@@ -649,12 +752,12 @@ const nativeFixDllSource = path.join(__dirname, "native-mods", "dist", "Dawnwalk
 
 function getNativeFixPaths() {
   const gameRoot = resolveCachedGameRoot();
-  if (!gameRoot) return null;
-  const modsDir = path.join(gameRoot, "Binaries", "Win64", "Mods");
-  const modDir = path.join(modsDir, "DawnwalkerNativeFix");
+  const currentModsDir = getActiveModsDir(gameRoot);
+  if (!currentModsDir) return null;
+  const modDir = path.join(currentModsDir, "DawnwalkerNativeFix");
   return {
-    gameRoot,
-    modsDir,
+    gameRoot: gameRoot || path.dirname(currentModsDir),
+    modsDir: currentModsDir,
     modDir,
     dllFile: path.join(modDir, "dlls", "main.dll"),
     commandFile: path.join(modDir, "command.txt"),
@@ -686,6 +789,7 @@ function deployNativeFix() {
   }
 
   try {
+    ensureModsJunction(paths.gameRoot, paths.modsDir);
     fs.mkdirSync(path.dirname(paths.dllFile), { recursive: true });
     fs.copyFileSync(nativeFixDllSource, paths.dllFile);
     ensureNativeFixEnabledInModsTxt(paths.modsDir);
@@ -808,6 +912,34 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  const launchOptions = parseLaunchArgs(process.argv, process.env);
+  let configDir = null;
+  try {
+    configDir = app.getPath("userData");
+  } catch {}
+  const appConfig = configDir ? readAppConfig(configDir) : {};
+
+  if (launchOptions.cliModsDir) {
+    customModsDir = path.normalize(launchOptions.cliModsDir);
+  } else if (appConfig.modsDir) {
+    customModsDir = path.normalize(appConfig.modsDir);
+  }
+  askModsDirOnLaunch = Boolean(appConfig.askModsDirOnLaunch);
+  modsDir = getActiveModsDir();
+
+  // Option to select mods folder at launch:
+  // 1. Force prompt if --select-mods-dir CLI argument was passed
+  // 2. Or if user enabled askModsDirOnLaunch preference
+  const shouldPrompt = launchOptions.forceSelectModsDir || askModsDirOnLaunch;
+  if (shouldPrompt && typeof dialog?.showOpenDialogSync === "function") {
+    promptSelectModsDir(null);
+  }
+
+  const initialGameRoot = resolveCachedGameRoot();
+  if (initialGameRoot && modsDir) {
+    ensureModsJunction(initialGameRoot, modsDir);
+  }
+
   // Every app start begins at game defaults: nothing carried over from a previous run.
   resetBridgeState();
   clearNativeFixCommand();
@@ -816,6 +948,63 @@ app.whenReady().then(() => {
     const scan = scanSteamInstall();
     cachedGameRoot = scan.installed ? scan.gameRoot : null;
     return scan;
+  });
+  ipcMain.handle("game:get-mods-dir", () => {
+    const gameRoot = resolveCachedGameRoot();
+    const active = getActiveModsDir(gameRoot);
+    return {
+      modsDir: active,
+      defaultModsDir: resolveAutoModsDir(gameRoot),
+      isCustom: Boolean(customModsDir),
+      exists: Boolean(active && fs.existsSync(active)),
+      askModsDirOnLaunch: Boolean(askModsDirOnLaunch),
+    };
+  });
+  ipcMain.handle("game:select-mods-dir", async () => {
+    if (!dialog || typeof dialog.showOpenDialog !== "function") return { ok: false, error: "Dialog unavailable" };
+    const focusedWin = BrowserWindow.getFocusedWindow();
+    const current = getActiveModsDir();
+    const gameRoot = resolveCachedGameRoot();
+    const defaultPath = (current && fs.existsSync(current))
+      ? current
+      : (gameRoot && fs.existsSync(gameRoot))
+        ? path.join(gameRoot, "Binaries", "Win64")
+        : undefined;
+
+    const result = await dialog.showOpenDialog(focusedWin || undefined, {
+      title: "Select Dawnwalker UE4SS Mods Folder (e.g. ue4ss\\Mods)",
+      defaultPath,
+      properties: ["openDirectory", "createDirectory"],
+    });
+
+    if (!result.canceled && result.filePaths?.length > 0) {
+      const selected = result.filePaths[0];
+      setCustomModsDir(selected);
+      return {
+        ok: true,
+        modsDir: selected,
+        isCustom: true,
+        exists: fs.existsSync(selected),
+      };
+    }
+    return { ok: false, canceled: true };
+  });
+  ipcMain.handle("game:set-mods-dir", (_event, targetPath) => {
+    setCustomModsDir(targetPath);
+    const active = getActiveModsDir();
+    return {
+      ok: true,
+      modsDir: active,
+      isCustom: Boolean(customModsDir),
+      exists: Boolean(active && fs.existsSync(active)),
+    };
+  });
+  ipcMain.handle("game:set-ask-mods-dir-on-launch", (_event, enabled) => {
+    askModsDirOnLaunch = Boolean(enabled);
+    try {
+      writeAppConfig(app.getPath("userData"), { askModsDirOnLaunch });
+    } catch {}
+    return { ok: true, askModsDirOnLaunch };
   });
   ipcMain.handle("game:backup-user-data", () => backupUserData());
   ipcMain.handle("game:compare-saves", (_event, leftName, rightName) => compareSaves(leftName, rightName));

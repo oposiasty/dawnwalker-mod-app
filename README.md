@@ -72,6 +72,7 @@ This keeps the UI sandboxed while preserving the real security boundary: all gam
 ├── index.js                    # Electron main process and bridge logic
 ├── preload.js                  # Renderer bridge exposure
 ├── bridge-protocol.js           # Shared validation and sanitization for command inputs
+├── mods-dir-resolver.js        # Mods directory resolution and launch options
 ├── package.json                # Root Electron app config and build scripts
 ├── runtime-mods/
 │   └── DawnwalkerModBridge/
@@ -156,6 +157,19 @@ npm --prefix ui run test
 3. Use the in-app pages to change supported settings or trigger runtime actions.
 4. The app validates the change, sends it through the bridge, and reports the current status back to the UI.
 5. If you want to return to normal gameplay, use the reset control or close the app to trigger default-safe cleanup.
+
+### Selecting the Mods Folder
+
+The app automatically searches for the UE4SS Mods folder under standard locations (`ue4ss/Mods`, `Binaries/Win64/Mods`, or `Mods`). You can also specify or select a custom folder:
+
+- **At launch via command line or shortcut**:
+  - `npm start -- --select-mods-dir` (or double-click `Open Dawnwalker Mod App (Select Mods Folder).cmd`)
+  - `npm start -- --mods-dir="C:\path\to\Mods"`
+  - Or set the `DAWNWALKER_MODS_DIR` environment variable
+- **At launch via preference**:
+  - In **Install & Capabilities**, toggle **"Ask to select mods folder at app launch"** to prompt for the folder every time the app starts.
+- **In-app**:
+  - Use the **"Select Mods Folder..."** button in **Install & Capabilities** or on the bridge panel at any time.
 
 ## Important notes
 

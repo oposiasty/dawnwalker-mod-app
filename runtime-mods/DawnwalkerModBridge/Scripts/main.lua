@@ -38,8 +38,33 @@
 
 local UEHelpers = require("UEHelpers")
 
-local COMMAND_PATH = "Mods/DawnwalkerModBridge/command.txt"
-local STATUS_PATH = "Mods/DawnwalkerModBridge/status.txt"
+local function ResolveModDir()
+    local info = debug.getinfo(1, "S")
+    local scriptSource = info and info.source
+    if scriptSource and scriptSource:sub(1, 1) == "@" then
+        local scriptPath = scriptSource:sub(2)
+        local modDir = scriptPath:match("^(.*[/\\])[Ss]cripts[/\\][^/\\]+$")
+        if modDir then
+            return modDir
+        end
+    end
+    local testDirs = {
+        "ue4ss/Mods/DawnwalkerModBridge/",
+        "Mods/DawnwalkerModBridge/",
+    }
+    for _, dir in ipairs(testDirs) do
+        local f = io.open(dir .. "Scripts/main.lua", "r")
+        if f then
+            f:close()
+            return dir
+        end
+    end
+    return "Mods/DawnwalkerModBridge/"
+end
+
+local MOD_DIR = ResolveModDir()
+local COMMAND_PATH = MOD_DIR .. "command.txt"
+local STATUS_PATH = MOD_DIR .. "status.txt"
 
 local LastRequestId = nil
 local WasCombatFound = false
@@ -141,6 +166,12 @@ local ReportedCarryWeightError = false
 
 local function ReadCommandFile()
     local file = io.open(COMMAND_PATH, "r")
+    if not file and COMMAND_PATH ~= "Mods/DawnwalkerModBridge/command.txt" then
+        file = io.open("Mods/DawnwalkerModBridge/command.txt", "r")
+    end
+    if not file and COMMAND_PATH ~= "ue4ss/Mods/DawnwalkerModBridge/command.txt" then
+        file = io.open("ue4ss/Mods/DawnwalkerModBridge/command.txt", "r")
+    end
     if not file then return nil end
     local data = {}
     for line in file:lines() do
@@ -153,11 +184,21 @@ end
 
 local function WriteStatusFile(fields)
     local file = io.open(STATUS_PATH, "w")
-    if not file then return end
-    for key, value in pairs(fields) do
-        file:write(string.format("%s=%s\n", key, tostring(value)))
+    if file then
+        for key, value in pairs(fields) do
+            file:write(string.format("%s=%s\n", key, tostring(value)))
+        end
+        file:close()
     end
-    file:close()
+    if STATUS_PATH ~= "Mods/DawnwalkerModBridge/status.txt" then
+        local secondary = io.open("Mods/DawnwalkerModBridge/status.txt", "w")
+        if secondary then
+            for key, value in pairs(fields) do
+                secondary:write(string.format("%s=%s\n", key, tostring(value)))
+            end
+            secondary:close()
+        end
+    end
 end
 
 local function GetSettings()

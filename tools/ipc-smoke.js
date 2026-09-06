@@ -20,8 +20,14 @@ const electronStub = {
     loadURL() {}
     loadFile() {}
     static getAllWindows() { return [1]; }
+    static getFocusedWindow() { return null; }
   },
-  dialog: { showErrorBox() {} },
+  dialog: {
+    showErrorBox() {},
+    showOpenDialogSync() { return []; },
+    showMessageBoxSync() { return 1; },
+    showOpenDialog: async () => ({ canceled: true, filePaths: [] }),
+  },
   ipcMain: { handle: (channel, fn) => { handlers[channel] = fn; } },
 };
 const originalResolve = Module._resolveFilename;
@@ -37,8 +43,10 @@ require(path.join(__dirname, "..", "index.js"));
   await new Promise((resolve) => setImmediate(resolve));
   const scan = await handlers["game:scan"]();
   if (!scan.installed) throw new Error("game install not found");
-  const commandFile = path.join(scan.gameRoot, "Binaries", "Win64", "Mods", "DawnwalkerModBridge", "command.txt");
-  const statusFile = path.join(scan.gameRoot, "Binaries", "Win64", "Mods", "DawnwalkerModBridge", "status.txt");
+  const modsInfo = handlers["game:get-mods-dir"] ? await handlers["game:get-mods-dir"]() : null;
+  const modsDir = modsInfo?.modsDir || scan.modsDir || path.join(scan.gameRoot, "Binaries", "Win64", "ue4ss", "Mods");
+  const commandFile = path.join(modsDir, "DawnwalkerModBridge", "command.txt");
+  const statusFile = path.join(modsDir, "DawnwalkerModBridge", "status.txt");
   const backup = fs.existsSync(commandFile) ? fs.readFileSync(commandFile, "utf8") : null;
   const statusBackup = fs.existsSync(statusFile) ? fs.readFileSync(statusFile, "utf8") : null;
   const results = [];
@@ -63,9 +71,13 @@ require(path.join(__dirname, "..", "index.js"));
     results.push(["reset", await handlers["bridge:reset"]()]);
     results.push(["command.txt after reset", fs.readFileSync(commandFile, "utf8")]);
     results.push(["get-command after reset", await handlers["bridge:get-command"]()]);
+    results.push(["mods-dir info", await handlers["game:get-mods-dir"]()]);
+    results.push(["set-ask-mods-dir-on-launch", await handlers["game:set-ask-mods-dir-on-launch"](null, true)]);
   } finally {
     if (backup !== null) fs.writeFileSync(commandFile, backup);
-    if (statusBackup !== null) fs.writeFileSync(statusFile, statusBackup);
+    else fs.rmSync(commandFile, { force: true });
+    if (statusBackup !== null && !statusBackup.includes("TEST-BOOT-1")) fs.writeFileSync(statusFile, statusBackup);
+    else if (statusBackup === null || statusBackup.includes("TEST-BOOT-1")) fs.rmSync(statusFile, { force: true });
   }
   for (const [label, value] of results) {
     console.log(`== ${label}\n${typeof value === "string" ? value : JSON.stringify(value)}`);

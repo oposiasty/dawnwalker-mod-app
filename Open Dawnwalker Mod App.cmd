@@ -1,3 +1,3 @@
 @echo off
 cd /d "%~dp0"
-call npm start
+call npm start -- %*

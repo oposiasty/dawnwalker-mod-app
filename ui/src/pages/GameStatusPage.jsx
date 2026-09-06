@@ -4,7 +4,7 @@ import DWButton from "../components/ui/DWButton";
 import DWSelect from "../components/ui/DWSelect";
 import PageHeader from "../components/ui/PageHeader";
 import RuneSection from "../components/ui/RuneSection";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 const signalLabels = {
   unrealPackDirectory: "Unreal Content/Paks directory",
@@ -35,6 +35,54 @@ export default function GameStatusPage() {
   const [leftSave, setLeftSave] = useState("");
   const [rightSave, setRightSave] = useState("");
   const [comparison, setComparison] = useState(null);
+  const [modsDirInfo, setModsDirInfo] = useState({
+    modsDir: "",
+    defaultModsDir: "",
+    isCustom: false,
+    exists: false,
+    askModsDirOnLaunch: false,
+    loading: true,
+  });
+  const [modsMessage, setModsMessage] = useState("");
+
+  const refreshModsDir = async () => {
+    if (window.dawnwalker?.getModsDir) {
+      try {
+        const info = await window.dawnwalker.getModsDir();
+        setModsDirInfo({ ...info, loading: false });
+      } catch {
+        setModsDirInfo((prev) => ({ ...prev, loading: false }));
+      }
+    }
+  };
+
+  useEffect(() => {
+    refreshModsDir();
+  }, []);
+
+  async function handleSelectMods() {
+    if (!window.dawnwalker?.selectModsDir) return;
+    const result = await window.dawnwalker.selectModsDir();
+    if (result?.ok) {
+      setModsMessage(`Mods folder updated: ${result.modsDir}`);
+      await refreshModsDir();
+      game.refresh();
+    }
+  }
+
+  async function handleResetMods() {
+    if (!window.dawnwalker?.setModsDir) return;
+    await window.dawnwalker.setModsDir(null);
+    setModsMessage("Mods folder reset to auto-detected default.");
+    await refreshModsDir();
+    game.refresh();
+  }
+
+  async function handleToggleAsk(enabled) {
+    if (!window.dawnwalker?.setAskModsDirOnLaunch) return;
+    await window.dawnwalker.setAskModsDirOnLaunch(enabled);
+    setModsDirInfo((prev) => ({ ...prev, askModsDirOnLaunch: enabled }));
+  }
 
   async function handleBackup() {
     if (!window.dawnwalker?.backupUserData) {
@@ -58,8 +106,17 @@ export default function GameStatusPage() {
       ) : !game.installed ? (
         <RuneSection title="Steam Installation Not Found">
           <p>Steam app ID 3751260 was not found in the standard Steam library locations.</p>
-          <p style={{ opacity: 0.78 }}>No game files were changed. Install the game through Steam, then rescan.</p>
-          <DWButton label="Scan Steam Libraries" onClick={game.refresh} />
+          <p style={{ opacity: 0.78 }}>No game files were changed. Install the game through Steam, then rescan, or select your UE4SS Mods folder below.</p>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 8 }}>
+            <DWButton label="Scan Steam Libraries" onClick={game.refresh} />
+            <DWButton label="Select Mods Folder..." onClick={handleSelectMods} />
+          </div>
+          {modsDirInfo.modsDir && (
+            <p style={{ marginTop: 10, overflowWrap: "anywhere", fontFamily: "var(--mono)" }}>
+              Selected mods folder: {modsDirInfo.modsDir}
+            </p>
+          )}
+          {modsMessage && <p style={{ color: theme.colors.gold, marginTop: 8 }}>{modsMessage}</p>}
         </RuneSection>
       ) : (
         <>
@@ -185,6 +242,48 @@ export default function GameStatusPage() {
                   ) : <p style={{ opacity: 0.82 }}>{comparison.error}</p>)}
                 </div>
               )}
+            </RuneSection>
+          </div>
+
+          <div style={{ marginTop: 16 }}>
+            <RuneSection title="Mods Directory Configuration">
+              <p style={{ opacity: 0.78 }}>
+                The folder where UE4SS loads runtime mods (DawnwalkerModBridge and DawnwalkerNativeFix).
+              </p>
+              <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, borderBottom: `1px solid ${theme.colors.divider}`, paddingBottom: 6 }}>
+                  <span>Active mods directory:</span>
+                  <strong>{modsDirInfo.isCustom ? "Custom override" : "Auto-detected"}</strong>
+                </div>
+                <p style={{ fontFamily: "var(--mono)", background: "rgba(0,0,0,0.3)", padding: "8px 12px", borderRadius: 4, overflowWrap: "anywhere", margin: "4px 0" }}>
+                  {modsDirInfo.modsDir || "Not resolved"}
+                </p>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16 }}>
+                  <span>Status on disk:</span>
+                  <strong style={{ color: modsDirInfo.exists ? theme.colors.gold : "#e57373" }}>
+                    {modsDirInfo.exists ? "Directory verified on disk" : "Directory not found"}
+                  </strong>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                <DWButton label="Select Mods Folder..." onClick={handleSelectMods} />
+                {modsDirInfo.isCustom && (
+                  <DWButton label="Reset to Auto-Detected" onClick={handleResetMods} />
+                )}
+              </div>
+
+              <div style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 10 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: "0.9em" }}>
+                  <input
+                    type="checkbox"
+                    checked={modsDirInfo.askModsDirOnLaunch}
+                    onChange={(e) => handleToggleAsk(e.target.checked)}
+                  />
+                  <span>Ask to select mods folder at app launch</span>
+                </label>
+              </div>
+              {modsMessage && <p style={{ color: theme.colors.gold, marginTop: 8 }}>{modsMessage}</p>}
             </RuneSection>
           </div>
 

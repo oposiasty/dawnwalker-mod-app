@@ -582,24 +582,6 @@ function ensureBridgeEnabledInModsTxt(modsDir) {
   fs.writeFileSync(modsTxtPath, `${content}${separator}DawnwalkerModBridge : 1\n`);
 }
 
-function ensureModsJunction(gameRoot, modsDir) {
-  if (!gameRoot || !modsDir || !fs.existsSync(modsDir)) return;
-  try {
-    const win64Dir = path.join(gameRoot, "Binaries", "Win64");
-    if (!fs.existsSync(win64Dir)) return;
-    const standardModsDir = path.join(win64Dir, "Mods");
-    const normalizedMods = path.normalize(modsDir).toLowerCase();
-    const normalizedStandard = path.normalize(standardModsDir).toLowerCase();
-
-    // If modsDir is inside a subfolder (e.g. Binaries/Win64/ue4ss/Mods) and standard Binaries/Win64/Mods doesn't exist:
-    if (normalizedMods !== normalizedStandard && !fs.existsSync(standardModsDir)) {
-      fs.symlinkSync(modsDir, standardModsDir, "junction");
-    }
-  } catch {
-    // Non-fatal if junction already exists or permissions restrict it
-  }
-}
-
 function deployBridge() {
   const paths = getBridgePaths();
   if (!paths) return { ok: false, error: "Game install was not found" };
@@ -608,7 +590,6 @@ function deployBridge() {
   }
 
   try {
-    ensureModsJunction(paths.gameRoot, paths.modsDir);
     fs.mkdirSync(paths.scriptsDir, { recursive: true });
     fs.copyFileSync(paths.mainLuaSource, path.join(paths.scriptsDir, "main.lua"));
     ensureBridgeEnabledInModsTxt(paths.modsDir);
@@ -835,7 +816,6 @@ function deployNativeFix() {
   }
 
   try {
-    ensureModsJunction(paths.gameRoot, paths.modsDir);
     fs.mkdirSync(path.dirname(paths.dllFile), { recursive: true });
     fs.copyFileSync(nativeFixDllSource, paths.dllFile);
     ensureNativeFixEnabledInModsTxt(paths.modsDir);
@@ -979,11 +959,6 @@ app.whenReady().then(() => {
   const shouldPrompt = launchOptions.forceSelectModsDir || askModsDirOnLaunch;
   if (shouldPrompt && typeof dialog?.showOpenDialogSync === "function") {
     promptSelectModsDir(null);
-  }
-
-  const initialGameRoot = resolveCachedGameRoot();
-  if (initialGameRoot && modsDir) {
-    ensureModsJunction(initialGameRoot, modsDir);
   }
 
   // Every app start begins at game defaults: nothing carried over from a previous run.

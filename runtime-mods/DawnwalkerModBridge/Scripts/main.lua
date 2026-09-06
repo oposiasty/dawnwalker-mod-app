@@ -166,12 +166,6 @@ local ReportedCarryWeightError = false
 
 local function ReadCommandFile()
     local file = io.open(COMMAND_PATH, "r")
-    if not file and COMMAND_PATH ~= "Mods/DawnwalkerModBridge/command.txt" then
-        file = io.open("Mods/DawnwalkerModBridge/command.txt", "r")
-    end
-    if not file and COMMAND_PATH ~= "ue4ss/Mods/DawnwalkerModBridge/command.txt" then
-        file = io.open("ue4ss/Mods/DawnwalkerModBridge/command.txt", "r")
-    end
     if not file then return nil end
     local data = {}
     for line in file:lines() do
@@ -184,21 +178,11 @@ end
 
 local function WriteStatusFile(fields)
     local file = io.open(STATUS_PATH, "w")
-    if file then
-        for key, value in pairs(fields) do
-            file:write(string.format("%s=%s\n", key, tostring(value)))
-        end
-        file:close()
+    if not file then return end
+    for key, value in pairs(fields) do
+        file:write(string.format("%s=%s\n", key, tostring(value)))
     end
-    if STATUS_PATH ~= "Mods/DawnwalkerModBridge/status.txt" then
-        local secondary = io.open("Mods/DawnwalkerModBridge/status.txt", "w")
-        if secondary then
-            for key, value in pairs(fields) do
-                secondary:write(string.format("%s=%s\n", key, tostring(value)))
-            end
-            secondary:close()
-        end
-    end
+    file:close()
 end
 
 local function GetSettings()

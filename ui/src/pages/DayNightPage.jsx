@@ -22,6 +22,8 @@ export default function DayNightPage() {
   const { status, busy, runAction } = api;
   const [hour, setHour] = useState(12);
   const [minute, setMinute] = useState(0);
+  const [npcLevel, setNpcLevel] = useState(0);
+  const [alertLevel, setAlertLevel] = useState(0);
 
   const targetTime = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 
@@ -77,6 +79,29 @@ export default function DayNightPage() {
               <Note tone="warn">
                 Both persist into your save and may affect achievements. Use outside combat and reopen the map to see
                 the result.
+              </Note>
+            </RuneSection>
+          </RuneStagger>
+
+          <RuneStagger index={3}>
+            <RuneSection title="Debug Overrides">
+              <ActionRow
+                label="Set NPC Level"
+                disabled={busy}
+                onClick={() => runAction("setNpcLevelOverride", npcLevel, "NPC level override sent to the game.")}
+              >
+                <DWSlider label="NPC Level (0 resets)" value={npcLevel} onChange={setNpcLevel} min={0} max={99} />
+              </ActionRow>
+              <ActionRow
+                label="Set Alert Level"
+                disabled={busy}
+                onClick={() => runAction("setAlertLevel", alertLevel, "Alert level sent to the game.")}
+              >
+                <DWSlider label="Alert Level" value={alertLevel} onChange={setAlertLevel} min={0} max={9} />
+              </ActionRow>
+              <Note tone="warn">
+                These are Dawnwalker debug-system overrides. NPC level and alert level can affect combat and save state;
+                use a manual save first.
               </Note>
             </RuneSection>
           </RuneStagger>

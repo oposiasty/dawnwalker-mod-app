@@ -261,6 +261,7 @@ function inspectRuntimeLoader(gameRoot) {
     : binaryRoot;
   const markerNames = ["UE4SS.dll", "UE4SS-settings.ini", "UE4SS.log"];
   const foundMarkers = markerNames.filter((name) => fs.existsSync(path.join(loaderRoot, name)));
+<<<<<<< HEAD
   const currentMods = getActiveModsDir(gameRoot);
   const modDirectories = [
     currentMods,
@@ -270,6 +271,13 @@ function inspectRuntimeLoader(gameRoot) {
     path.join(gameRoot, "~mods"),
   ].filter((name) => name && fs.existsSync(name));
   const uniqueModDirs = [...new Set(modDirectories)];
+=======
+  const modDirectories = ["Mods", "~mods"].filter((name) => (
+    fs.existsSync(path.join(loaderRoot, name))
+    || fs.existsSync(path.join(binaryRoot, name))
+    || fs.existsSync(path.join(gameRoot, name))
+  ));
+>>>>>>> ccc83479b083a36fbb434ea85ae411f4637010d5
 
   return {
     binaryRoot,
@@ -513,11 +521,43 @@ function scanSteamInstall() {
   return { installed: false, appId: STEAM_APP_ID, path: null };
 }
 
+<<<<<<< HEAD
 function getBridgePaths() {
   const gameRoot = resolveCachedGameRoot();
   const currentModsDir = getActiveModsDir(gameRoot);
   if (!currentModsDir) return null;
   const bridgeDir = path.join(currentModsDir, "DawnwalkerModBridge");
+=======
+// --- Live mod bridge (UE4SS) ---
+// Cached so apply/status calls don't have to re-run a full install scan every time.
+let cachedGameRoot = null;
+
+function resolveCachedGameRoot() {
+  if (cachedGameRoot && fs.existsSync(cachedGameRoot)) return cachedGameRoot;
+  const scan = scanSteamInstall();
+  cachedGameRoot = scan.installed ? scan.gameRoot : null;
+  return cachedGameRoot;
+}
+
+// UE4SS 3.1+ installs into Binaries/Win64/ue4ss/Mods; older builds use Binaries/Win64/Mods.
+// Falls back to the legacy path so callers can report "UE4SS is missing" instead of failing as
+// if the game install itself was not found.
+function resolveModsDir(gameRoot) {
+  const candidates = [
+    path.join(gameRoot, "Binaries", "Win64", "ue4ss", "Mods"),
+    path.join(gameRoot, "Binaries", "Win64", "Mods"),
+    path.join(gameRoot, "Mods"),
+  ];
+  return candidates.find((dir) => fs.existsSync(dir)) || candidates[1];
+}
+
+function getBridgePaths() {
+  const gameRoot = resolveCachedGameRoot();
+  if (!gameRoot) return null;
+
+  const modsDir = resolveModsDir(gameRoot);
+  const bridgeDir = path.join(modsDir, "DawnwalkerModBridge");
+>>>>>>> ccc83479b083a36fbb434ea85ae411f4637010d5
   return {
     gameRoot: gameRoot || path.dirname(currentModsDir),
     modsDir: currentModsDir,
@@ -752,9 +792,15 @@ const nativeFixDllSource = path.join(__dirname, "native-mods", "dist", "Dawnwalk
 
 function getNativeFixPaths() {
   const gameRoot = resolveCachedGameRoot();
+<<<<<<< HEAD
   const currentModsDir = getActiveModsDir(gameRoot);
   if (!currentModsDir) return null;
   const modDir = path.join(currentModsDir, "DawnwalkerNativeFix");
+=======
+  if (!gameRoot) return null;
+  const modsDir = resolveModsDir(gameRoot);
+  const modDir = path.join(modsDir, "DawnwalkerNativeFix");
+>>>>>>> ccc83479b083a36fbb434ea85ae411f4637010d5
   return {
     gameRoot: gameRoot || path.dirname(currentModsDir),
     modsDir: currentModsDir,
